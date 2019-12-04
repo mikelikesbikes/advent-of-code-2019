@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 func ValidPassword(pw string) bool {
@@ -13,6 +14,39 @@ func ValidPassword(pw string) bool {
 
 func ValidPassword2(pw string) bool {
 	return increasing(pw) && hasStandaloneDouble(pw)
+}
+
+func runner(f func(string) bool, min, max int) int {
+	validChan := make(chan string)
+	var wg sync.WaitGroup
+	for i := min; i < max+1; i += 100 {
+		mmax := i + 100
+		if mmax > max {
+			mmax = max + 1
+		}
+		wg.Add(1)
+		go func(min, max int) {
+			defer wg.Done()
+
+			for ; min < max; min += 1 {
+				pw := fmt.Sprintf("%v", min)
+				if f(pw) {
+					validChan <- pw
+				}
+			}
+		}(i, mmax-1)
+	}
+	go func() {
+		defer close(validChan)
+		wg.Wait()
+	}()
+
+	count := 0
+	for range validChan {
+		count += 1
+	}
+
+	return count
 }
 
 func hasRepeat(pw string) bool {
@@ -47,31 +81,22 @@ func atoi(s string) int {
 	return i
 }
 
+func parseInput(s string) (int, int) {
+	minmax := strings.Split(s, "-")
+	if len(minmax) != 2 {
+		panic(fmt.Sprintf("invalid input: %v", s))
+	}
+	return atoi(minmax[0]), atoi(minmax[1])
+}
+
 func main() {
 	input := "138241-674034"
 	if len(os.Args) > 1 {
 		input = os.Args[1]
 	}
-	minmax := strings.Split(input, "-")
-	if len(minmax) != 2 {
-		panic(fmt.Sprintf("invalid input: %v", input))
-	}
-	min, max := atoi(minmax[0]), atoi(minmax[1])
-	count := 0
-	for i := min; i <= max; i++ {
-		pw := fmt.Sprintf("%v", i)
-		if ValidPassword(pw) {
-			count += 1
-		}
-	}
-	fmt.Println(count)
 
-	count = 0
-	for i := min; i <= max; i++ {
-		pw := fmt.Sprintf("%v", i)
-		if ValidPassword2(pw) {
-			count += 1
-		}
-	}
-	fmt.Println(count)
+	min, max := parseInput(input)
+
+	fmt.Println(runner(ValidPassword, min, max))
+	fmt.Println(runner(ValidPassword2, min, max))
 }
