@@ -16,6 +16,11 @@ type instruction struct {
 
 type program struct {
 	memory []int
+	ip     int
+}
+
+func NewProgram(memory []int) program {
+	return program{memory: memory, ip: 0}
 }
 
 func parseInst(i int) instruction {
@@ -29,40 +34,24 @@ func parseInst(i int) instruction {
 	}
 }
 
-func (inst instruction) arity() int {
-	var arity int
-	switch inst.opcode {
-	case 3, 4:
-		arity = 1
-	case 5, 6:
-		arity = 2
-	case 1, 2, 7, 8:
-		arity = 3
-	case 99:
-		arity = 99
-	}
-	return arity
+func (p program) nextInst() instruction {
+	return parseInst(p.memory[p.ip])
 }
 
 func (p program) read(param, mode int) int {
 	var val int
+	pos := p.ip + param
 	if mode == 0 {
-		val = p.memory[p.memory[param]]
+		val = p.memory[p.memory[pos]]
 	} else {
-		val = p.memory[param]
+		val = p.memory[pos]
 	}
 	return val
 }
 
 func (p program) write(param, val int) {
-	p.memory[p.memory[param]] = val
-}
-
-func (p1 program) dup() program {
-	var p2 program
-	p2.memory = make([]int, len(p1.memory))
-	copy(p2.memory, p1.memory)
-	return p2
+	pos := p.ip + param
+	p.memory[p.memory[pos]] = val
 }
 
 func atoi(s string) int {
@@ -73,62 +62,63 @@ func atoi(s string) int {
 	return v
 }
 
-func (p program) Run() program {
-	result := p.dup()
-	reader := bufio.NewReader(os.Stdin)
-
-	for i := 0; i < len(result.memory); {
-		inst := parseInst(result.read(i, 1))
-		jump := false
+func (p program) Run() {
+	for p.ip < len(p.memory) {
+		inst := p.nextInst()
 		switch inst.opcode {
 		case 1:
-			x, y := result.read(i+1, inst.m1), result.read(i+2, inst.m2)
-			result.write(i+3, x+y)
+			x, y := p.read(1, inst.m1), p.read(2, inst.m2)
+			p.write(3, x+y)
+			p.ip += 4
 		case 2:
-			x, y := result.read(i+1, inst.m1), result.read(i+2, inst.m2)
-			result.write(i+3, x*y)
+			x, y := p.read(1, inst.m1), p.read(2, inst.m2)
+			p.write(3, x*y)
+			p.ip += 4
 		case 3:
-			// read from stdin
+			reader := bufio.NewReader(os.Stdin)
 			s, _ := reader.ReadString('\n')
-			result.write(i+1, atoi(s[:len(s)-1]))
+			p.write(1, atoi(s[:len(s)-1]))
+			p.ip += 2
 		case 4:
-			fmt.Println(result.read(i+1, inst.m1))
+			fmt.Println(p.read(1, inst.m1))
+			p.ip += 2
 		case 5:
-			x := result.read(i+1, inst.m1)
+			x := p.read(1, inst.m1)
 			if x != 0 {
-				jump = true
-				i = result.read(i+2, inst.m2)
+				p.ip = p.read(2, inst.m2)
+			} else {
+				p.ip += 3
 			}
 		case 6:
-			x := result.read(i+1, inst.m1)
+			x := p.read(1, inst.m1)
 			if x == 0 {
-				jump = true
-				i = result.read(i+2, inst.m2)
+				p.ip = p.read(2, inst.m2)
+			} else {
+				p.ip += 3
 			}
 		case 7:
-			x, y := result.read(i+1, inst.m1), result.read(i+2, inst.m2)
+			x, y := p.read(1, inst.m1), p.read(2, inst.m2)
 			lt := 0
 			if x < y {
 				lt = 1
 			}
-			result.write(i+3, lt)
+			p.write(3, lt)
+			p.ip += 4
 		case 8:
-			x, y := result.read(i+1, inst.m1), result.read(i+2, inst.m2)
+			x, y := p.read(1, inst.m1), p.read(2, inst.m2)
 			eq := 0
 			if x == y {
 				eq = 1
 			}
-			result.write(i+3, eq)
+			p.write(3, eq)
+			p.ip += 4
 		case 99:
-			return result
+			return
 		default:
 			panic(fmt.Sprintf("unknown opcode %v", inst.orig))
 		}
-		if !jump {
-			i += (inst.arity() + 1)
-		}
 	}
-	return result
+	return
 }
 
 func main() {
@@ -148,7 +138,6 @@ func main() {
 		}
 		content = append(content, c)
 	}
-	p := program{memory: content}
-	result := p.Run()
-	fmt.Println(result)
+	p := NewProgram(content)
+	p.Run()
 }
