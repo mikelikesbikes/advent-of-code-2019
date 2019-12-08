@@ -27,34 +27,8 @@ func countDigits(s string) map[rune]int {
 	return m
 }
 
-func (img *Image) Render() {
-	white := color.New(color.BgWhite).PrintfFunc()
-	black := color.New(color.BgBlack).PrintfFunc()
-
+func (img *Image) Checksum() int {
 	layers := img.Layers()
-	for i := 0; i < len(layers[0]); i++ {
-		col := i % img.width
-		if col == 0 {
-			fmt.Println()
-		}
-		for _, layer := range layers {
-			v := layer[i] - 48
-			if v != 2 {
-				if v == 0 {
-					black(" ")
-				} else {
-					white(" ")
-				}
-				break
-			}
-		}
-	}
-}
-
-func main() {
-	rawImage := utils.ReadLines("input.txt")[0]
-	image := Image{height: 6, width: 25, data: rawImage}
-	layers := image.Layers()
 	minDigits := countDigits(layers[0])
 	for i := 1; i < len(layers); i++ {
 		l := layers[i]
@@ -62,7 +36,46 @@ func main() {
 			minDigits = digits
 		}
 	}
-	fmt.Println(minDigits['1'] * minDigits['2'])
+	return minDigits['1'] * minDigits['2']
+}
 
+func (img *Image) flatten() []int {
+	layers := img.Layers()
+	flat := make([]int, img.width*img.height)
+
+	for i := 0; i < len(layers[0]); i++ {
+		for _, layer := range layers {
+			v := int(layer[i]) - 48
+			if v != 2 {
+				flat[i] = v
+				break
+			}
+		}
+	}
+
+	return flat
+}
+
+func (img *Image) Render() {
+	white := color.New(color.BgWhite).PrintfFunc()
+	black := color.New(color.BgBlack).PrintfFunc()
+	for i, v := range img.flatten() {
+		col := i % img.width
+		if col == 0 {
+			fmt.Println()
+		}
+		if v == 0 {
+			black(" ")
+		} else {
+			white(" ")
+		}
+	}
+}
+
+func main() {
+	rawImage := utils.ReadLines("input.txt")[0]
+	image := Image{height: 6, width: 25, data: rawImage}
+
+	fmt.Println(image.Checksum())
 	image.Render()
 }
