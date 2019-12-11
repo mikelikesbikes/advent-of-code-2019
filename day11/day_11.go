@@ -215,7 +215,7 @@ func (p *Painter) TurnAndMove(turn int) {
 		p.dir += 1
 	}
 
-	switch p.dir % 4 {
+	switch p.dir & 3 {
 	case 0:
 		p.pos.y += -1
 	case 1:
