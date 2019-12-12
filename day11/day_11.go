@@ -1,171 +1,13 @@
 package main
 
 import (
-	"bufio"
+	"../utils"
+	"../utils/intcode"
 	"fmt"
 	"github.com/fatih/color"
-	"os"
 	"strconv"
 	"strings"
 )
-
-type Instruction struct {
-	orig       int
-	opcode     int
-	m1, m2, m3 int
-}
-
-type Program struct {
-	memory       []int
-	ip           int
-	relativeBase int
-	in           chan int
-	out          chan int
-}
-
-func NewProgram(memory []int) *Program {
-	memoryCopy := make([]int, len(memory))
-	copy(memoryCopy, memory)
-	return &Program{memory: memoryCopy, ip: 0, in: make(chan int, 2), out: make(chan int, 20)}
-}
-
-func parseInst(i int) Instruction {
-	pads := fmt.Sprintf("%05d", i)
-	return Instruction{
-		orig:   i,
-		opcode: atoi(pads[3:]),
-		m1:     atoi(string(pads[2])),
-		m2:     atoi(string(pads[1])),
-		m3:     atoi(string(pads[0])),
-	}
-}
-
-func (p *Program) nextInst() Instruction {
-	return parseInst(p.memory[p.ip])
-}
-
-func (p *Program) expandMemory(size int) {
-	if len(p.memory)-1 < size {
-		newMemory := make([]int, size+1)
-		copy(newMemory, p.memory)
-		p.memory = newMemory
-	}
-}
-
-func (p *Program) paramVal(param, mode int) int {
-	var val int
-	pos := p.ip + param
-	switch mode {
-	case 0:
-		// position mode
-		position := p.memory[pos]
-		p.expandMemory(position)
-		val = p.memory[position]
-	case 1:
-		// immediate mode
-		val = p.memory[pos]
-	case 2:
-		// relative
-		relative := p.relativeBase + p.memory[pos]
-		p.expandMemory(relative)
-		val = p.memory[relative]
-	default:
-		panic(fmt.Sprintf("invalid parameter mode %v", mode))
-	}
-	return val
-}
-
-func (p *Program) write(param, mode, val int) {
-	pos := p.ip + param
-	p.expandMemory(pos)
-	if mode == 2 {
-		npos := p.relativeBase + p.memory[pos]
-		pos = npos
-	} else {
-		pos = p.memory[pos]
-	}
-	p.expandMemory(pos)
-	p.memory[pos] = val
-}
-
-func atoi(s string) int {
-	v, err := strconv.Atoi(s)
-	if err != nil {
-		panic(fmt.Sprintf("can't convert %v", s))
-	}
-	return v
-}
-
-func (p *Program) Step() bool {
-	inst := p.nextInst()
-	switch inst.opcode {
-	case 1:
-		x, y := p.paramVal(1, inst.m1), p.paramVal(2, inst.m2)
-		p.write(3, inst.m3, x+y)
-		p.ip += 4
-	case 2:
-		x, y := p.paramVal(1, inst.m1), p.paramVal(2, inst.m2)
-		p.write(3, inst.m3, x*y)
-		p.ip += 4
-	case 3:
-		v := <-p.in
-		p.write(1, inst.m1, v)
-		p.ip += 2
-	case 4:
-		p.out <- p.paramVal(1, inst.m1)
-		p.ip += 2
-	case 5:
-		x := p.paramVal(1, inst.m1)
-		if x != 0 {
-			p.ip = p.paramVal(2, inst.m2)
-		} else {
-			p.ip += 3
-		}
-	case 6:
-		x := p.paramVal(1, inst.m1)
-		if x == 0 {
-			p.ip = p.paramVal(2, inst.m2)
-		} else {
-			p.ip += 3
-		}
-	case 7:
-		x, y := p.paramVal(1, inst.m1), p.paramVal(2, inst.m2)
-		lt := 0
-		if x < y {
-			lt = 1
-		}
-		p.write(3, inst.m3, lt)
-		p.ip += 4
-	case 8:
-		x, y := p.paramVal(1, inst.m1), p.paramVal(2, inst.m2)
-		eq := 0
-		if x == y {
-			eq = 1
-		}
-		p.write(3, inst.m3, eq)
-		p.ip += 4
-	case 9:
-		val := p.paramVal(1, inst.m1)
-		p.relativeBase += val
-		p.ip += 2
-	case 99:
-		return true
-	default:
-		panic(fmt.Sprintf("unknown opcode %v", inst.orig))
-	}
-	return false
-}
-
-func (p *Program) Run() {
-	for {
-		halt := p.Step()
-		if halt {
-			close(p.in)
-			close(p.out)
-			return
-		}
-	}
-}
 
 type Coord struct {
 	x, y int
@@ -175,35 +17,34 @@ type Painter struct {
 	pos    Coord
 	dir    int
 	canvas map[Coord]int
-	brain  *Program
+	brain  *intcode.Program
 }
 
-func NewPainter(intcode []int) *Painter {
+func NewPainter(code []int) *Painter {
 	return &Painter{
 		pos:    Coord{0, 0},
 		dir:    0,
 		canvas: make(map[Coord]int),
-		brain:  NewProgram(intcode),
+		brain:  intcode.NewProgram(code),
 	}
 }
 
 func (p *Painter) Start() {
-	go func() {
-		p.brain.Run()
-	}()
+	go p.brain.Run()
 }
 
 func (p *Painter) Step() (res bool) {
 	defer func() {
+		// attempting to read from a closed channel signals that the program is
+		// finished and step should return false to tell the painter to halt
 		if x := recover(); x != nil {
 			res = false
 		}
 	}()
-	p.brain.in <- p.canvas[p.pos]
-	color := <-p.brain.out
-	turn := <-p.brain.out
-	p.canvas[p.pos] = color
-	p.TurnAndMove(turn)
+
+	p.brain.In <- p.canvas[p.pos]
+	p.canvas[p.pos] = <-p.brain.Out
+	p.TurnAndMove(<-p.brain.Out)
 	return true
 }
 
@@ -217,13 +58,13 @@ func (p *Painter) TurnAndMove(turn int) {
 
 	switch p.dir & 3 {
 	case 0:
-		p.pos.y += -1
+		p.pos.y--
 	case 1:
-		p.pos.x += 1
+		p.pos.x++
 	case 2:
-		p.pos.y += 1
+		p.pos.y++
 	case 3:
-		p.pos.x += -1
+		p.pos.x--
 	}
 }
 
@@ -262,16 +103,9 @@ func Render(canvas map[Coord]int) {
 }
 
 func main() {
-	file, err := os.Open("input.txt")
-	if err != nil {
-		panic("couldn't open input.txt")
-	}
-
-	scanner := bufio.NewScanner(file)
-	scanner.Scan()
-	b := scanner.Text()
+	line := utils.ReadLines("input.txt")[0]
 	var intcode []int
-	for _, s := range strings.Split(string(b), ",") {
+	for _, s := range strings.Split(string(line), ",") {
 		c, err := strconv.Atoi(s)
 		if err != nil {
 			panic(fmt.Sprintf("couldn't convert text: %v", s))
