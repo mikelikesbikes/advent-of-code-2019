@@ -100,7 +100,7 @@ func (f *Factory) rawMaterialsFor(name string, amount int) int {
 func (f *Factory) maxFuelFor(name string, amount int) int {
 	min, max := 0, amount
 	for max > min {
-		mid := (max + min + 1) / 2
+		mid := min + ((max - min + 1) / 2)
 		oreNeeded := f.rawMaterialsFor("FUEL", mid)
 		if oreNeeded > amount {
 			max = mid - 1
