@@ -3,6 +3,7 @@ package intcode
 import (
 	"fmt"
 	"strconv"
+	"strings"
 )
 
 type Instruction struct {
@@ -15,14 +16,28 @@ type Program struct {
 	Memory       []int
 	ip           int
 	relativeBase int
+	InputNeeded  chan bool
 	In           chan int
 	Out          chan int
+	Done         bool
+}
+
+func ParseIntcodeProgram(code string) *Program {
+	var intcode []int
+	for _, s := range strings.Split(string(code), ",") {
+		c, err := strconv.Atoi(s)
+		if err != nil {
+			panic(fmt.Sprintf("couldn't convert text: %v", s))
+		}
+		intcode = append(intcode, c)
+	}
+	return NewProgram(intcode)
 }
 
 func NewProgram(memory []int) *Program {
 	memoryCopy := make([]int, len(memory))
 	copy(memoryCopy, memory)
-	return &Program{Memory: memoryCopy, ip: 0, In: make(chan int, 2), Out: make(chan int, 20)}
+	return &Program{Memory: memoryCopy, ip: 0, In: make(chan int), Out: make(chan int), InputNeeded: make(chan bool), Done: false}
 }
 
 func parseInst(i int) Instruction {
@@ -104,6 +119,7 @@ func (p *Program) Step() bool {
 		p.write(3, inst.m3, x*y)
 		p.ip += 4
 	case 3:
+		p.InputNeeded <- true
 		v := <-p.In
 		p.write(1, inst.m1, v)
 		p.ip += 2
@@ -145,6 +161,7 @@ func (p *Program) Step() bool {
 		p.relativeBase += val
 		p.ip += 2
 	case 99:
+		p.Done = true
 		return true
 	default:
 		panic(fmt.Sprintf("unknown opcode %v", inst.orig))
@@ -153,13 +170,11 @@ func (p *Program) Step() bool {
 }
 
 func (p *Program) Run() {
-	defer close(p.In)
+	//defer close(p.In)
 	defer close(p.Out)
+	defer close(p.InputNeeded)
 
-	for {
-		halt := p.Step()
-		if halt {
-			return
-		}
+	for !p.Done {
+		p.Step()
 	}
 }
