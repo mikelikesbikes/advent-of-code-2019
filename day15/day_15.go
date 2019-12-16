@@ -16,15 +16,15 @@ type RepairDroid struct {
 	pos      XY
 	target   XY
 	computer *intcode.Program
-	back     []XY
+	path     []XY
 }
 
 func (a XY) adjacents() []XY {
 	return []XY{
-		{a.x, a.y - 1},
+		{a.x + 1, a.y},
 		{a.x, a.y + 1},
 		{a.x - 1, a.y},
-		{a.x + 1, a.y},
+		{a.x, a.y - 1},
 	}
 }
 
@@ -47,7 +47,7 @@ func dir(a, b XY) int {
 }
 
 func NewRepairDroid(code string) *RepairDroid {
-	return &RepairDroid{canvas: make(map[XY]int), computer: intcode.ParseIntcodeProgram(code), pos: XY{0, 0}, back: make([]XY, 0)}
+	return &RepairDroid{canvas: make(map[XY]int), computer: intcode.ParseIntcodeProgram(code), pos: XY{0, 0}, path: make([]XY, 0)}
 }
 
 func (rd *RepairDroid) availablePos() []XY {
@@ -82,7 +82,7 @@ func findBounds(m map[XY]int) (XY, XY) {
 func (rd *RepairDroid) Render() {
 	fmt.Println("\033[2J")
 
-	min, max := findBounds(rd.canvas)
+	min, max := XY{-21, -21}, XY{19, 19}
 	for y := min.y; y <= max.y; y++ {
 		fmt.Print("\n")
 		for x := min.x; x <= max.x; x++ {
@@ -106,15 +106,15 @@ func (rd *RepairDroid) Render() {
 		}
 	}
 	fmt.Println()
-	time.Sleep(20 * time.Millisecond)
+	time.Sleep(15 * time.Millisecond)
 }
 
 func (rd *RepairDroid) nextMove() int {
 	available := rd.availablePos()
 	if len(available) == 0 {
-		last := len(rd.back) - 1
-		rd.target = rd.back[last]
-		rd.back = rd.back[:last]
+		last := len(rd.path) - 1
+		rd.target = rd.path[last]
+		rd.path = rd.path[:last]
 	} else {
 		rd.target = available[0]
 	}
@@ -123,11 +123,11 @@ func (rd *RepairDroid) nextMove() int {
 }
 
 func (rd *RepairDroid) move(status int) {
-	_, back := rd.canvas[rd.target]
+	_, path := rd.canvas[rd.target]
 	rd.canvas[rd.target] = status
 	if status != 0 {
-		if !back {
-			rd.back = append(rd.back, rd.pos)
+		if !path {
+			rd.path = append(rd.path, rd.pos)
 		}
 		rd.pos = rd.target
 	}
@@ -154,15 +154,18 @@ func distMap(m map[XY]int, src XY) map[XY]int {
 	return visited
 }
 
-func (rd *RepairDroid) Start() {
+func (rd *RepairDroid) Start(render bool) {
 	go func() {
 		rd.computer.Run()
 	}()
 
-	for !(len(rd.back) == 0 && len(rd.availablePos()) == 0) {
+	for !(len(rd.path) == 0 && len(rd.availablePos()) == 0) {
 		select {
 		case status := <-rd.computer.Out:
 			rd.move(status)
+			if render {
+				rd.Render()
+			}
 		case <-rd.computer.InputNeeded:
 			rd.computer.In <- rd.nextMove()
 		}
@@ -173,7 +176,7 @@ func main() {
 	lines := utils.ReadLines("input.txt")
 	droid := NewRepairDroid(lines[0])
 
-	droid.Start()
+	droid.Start(false)
 
 	var oxygen XY
 	for k, v := range droid.canvas {
