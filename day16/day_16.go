@@ -31,11 +31,7 @@ func FFT(input string, n int) string {
 }
 
 func Decode(input string, n int) string {
-	var str strings.Builder
-	for i := 0; i < 10000; i++ {
-		str.WriteString(input)
-	}
-	realSignal := str.String()
+	realSignal := strings.Repeat(input, 10000)
 	offset := utils.Atoi(input[0:7])
 
 	tailSig := btoi([]byte(realSignal[offset:]))
