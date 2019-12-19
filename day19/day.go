@@ -11,33 +11,11 @@ type XY struct {
 }
 
 type Beam struct {
-	computer *intcode.Program
-	picture  map[XY]int
-	code     string
+	code string
 }
 
 func NewBeam(code string) *Beam {
-	return &Beam{computer: intcode.ParseIntcodeProgram(code), picture: make(map[XY]int, 0), code: code}
-}
-
-func (b *Beam) Start(pos XY) {
-	go b.computer.Run()
-	var toggle bool
-loop:
-	for {
-		select {
-		case <-b.computer.InputNeeded:
-			if toggle {
-				b.computer.In <- pos.y
-			} else {
-				b.computer.In <- pos.x
-			}
-			toggle = !toggle
-		case c := <-b.computer.Out:
-			b.picture[pos] = c
-			break loop
-		}
-	}
+	return &Beam{code: code}
 }
 
 func (b *Beam) TestPos(pos XY) int {
@@ -59,99 +37,43 @@ func (b *Beam) TestPos(pos XY) int {
 	}
 }
 
-func (b *Beam) TestField(minx, miny, maxx, maxy int) {
-	for y := miny; y < maxy; y++ {
-		for x := minx; x < maxx; x++ {
-			pos := XY{x, y}
-			b.picture[pos] = b.TestPos(pos)
-		}
-	}
-}
-func findBounds(m map[XY]int) (XY, XY) {
-	var minx, miny, maxx, maxy int
-	for k, _ := range m {
-		minx = k.x
-		maxx = k.x
-		miny = k.y
-		maxy = k.y
-		break
-	}
-	for p := range m {
-		if p.x < minx {
-			minx = p.x
-		}
-		if p.y < miny {
-			miny = p.y
-		}
-		if p.x > maxx {
-			maxx = p.x
-		}
-		if p.y > maxy {
-			maxy = p.y
-		}
-	}
-	return XY{minx, miny}, XY{maxx, maxy}
-}
-func Render(m map[XY]int) {
-	min, max := findBounds(m)
-	fmt.Println(min, max)
-	fmt.Print("       ")
-	for x := min.x; x <= max.x; x++ {
-		fmt.Print((x / 10) % 10)
-	}
-	fmt.Print("\n       ")
-	for x := min.x; x <= max.x; x++ {
-		fmt.Print(x % 10)
-	}
-	for y := min.y; y <= max.y; y++ {
-		fmt.Printf("\n%06d ", y)
-		for x := min.x; x <= max.x; x++ {
-			switch m[XY{x, y}] {
-			case 0:
-				fmt.Print(".")
-			case 1:
-				fmt.Print("#")
+func (b *Beam) FitSquare(n int) XY {
+	miny, maxy := 0, 100000
+	var x int
+
+	for miny < maxy {
+		midy := miny + (maxy-miny)/2
+		for x = 0; x < 100000; x++ {
+			test := b.TestPos(XY{x, midy})
+			if test == 1 {
+				break
 			}
 		}
+		tr := b.TestPos(XY{x + n - 1, midy - n + 1})
+		if tr == 1 {
+			maxy = midy
+		} else {
+			miny = midy + 1
+		}
 	}
-	fmt.Println()
+	return XY{x, maxy - n + 1}
 }
 
 func main() {
 	lines := utils.ReadLines("input.txt")
 
 	beam := NewBeam(lines[0])
-	beam.TestField(0, 0, 50, 50)
 
 	var affected int
-	for _, v := range beam.picture {
-		if v == 1 {
-			affected++
+	for y := 0; y < 50; y++ {
+		for x := 0; x < 50; x++ {
+			if beam.TestPos(XY{x, y}) == 1 {
+				affected++
+			}
 		}
 	}
-
 	fmt.Println(affected)
 
-	x, y := 80, 89
-	for w := 8; w < 100; w += 2 {
-		if (w/2)%2 == 0 {
-			x += 25
-			y += 28
-		} else {
-			x += 20
-			y += 22
-		}
-	}
-
-	//beam = NewBeam(lines[0])
-	//beam.TestField(x, y, x+120, y+120)
-	//Render(beam.picture)
-	// this got me close... but it's off by 1... i think... so
-
-	// 1122,1248
-	beam = NewBeam(lines[0])
-	beam.TestField(1122, 1248, 1222, 1348)
-	Render(beam.picture)
-
-	fmt.Println(x*10000 + y)
+	pos := beam.FitSquare(100)
+	fmt.Println(pos.x*10000 + pos.y)
 }
